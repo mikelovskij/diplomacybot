@@ -18,6 +18,7 @@ OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 AI_COUNTRY = os.environ.get("AI_COUNTRY", "Austria")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+SERVICE_TIER = os.environ.get("SERVICE_TIER", "flex")  # e.g., "standard", "flex" (cheaper, slower)
 
 # Channel in your Discord server used to paste state and request orders.
 CONTROL_CHANNEL_ID = int(os.environ["CONTROL_CHANNEL_ID"])
@@ -25,7 +26,7 @@ CONTROL_CHANNEL_ID = int(os.environ["CONTROL_CHANNEL_ID"])
 DB_PATH = os.environ.get("DB_PATH", "diplo_bot.sqlite3")
 
 # Limit how much raw DM history we feed each call (we'll also keep a summary).
-RAW_TURNS_TO_KEEP = int(os.environ.get("RAW_TURNS_TO_KEEP", "24"))
+RAW_TURNS_TO_KEEP = int(os.environ.get("RAW_TURNS_TO_KEEP", "12"))
 
 # Basic cooldown per user to avoid spam & cost (seconds)
 USER_COOLDOWN_SECONDS = float(os.environ.get("USER_COOLDOWN_SECONDS", "30"))
@@ -74,7 +75,8 @@ def init_db() -> None:
         discord_user_id TEXT PRIMARY KEY,
         messages_json TEXT NOT NULL,
         summary_text TEXT NOT NULL,
-        last_updated TEXT NOT NULL
+        last_updated TEXT NOT NULL,
+        summary_last_updated TEXT NOT NULL      
     )
     """)
     cur.execute("""
@@ -91,6 +93,16 @@ def init_db() -> None:
         last_message_at REAL NOT NULL
     )
     """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_memory (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    commitments TEXT NOT NULL
+    )
+    """)
+    
+    # Initialize empty rows if not present
+    cur.execute("INSERT OR IGNORE INTO ai_memory(id, commitments) VALUES (1, '');")
     cur.execute("INSERT OR IGNORE INTO game_state(id, phase, state_text, updated_at) VALUES(1, '', '', '')")
     conn.commit()
     conn.close()
@@ -134,26 +146,173 @@ def get_player_country(user_id: int) -> Optional[str]:
     conn.close()
     return row[0] if row else None
 
-def load_thread(user_id: int) -> Dict:
+def load_thread(user_id: int) -> dict:
     conn = db()
-    row = conn.execute("SELECT messages_json, summary_text FROM threads WHERE discord_user_id=?", (str(user_id),)).fetchone()
+    row = conn.execute("""
+        SELECT messages_json, summary_text, summary_last_updated
+        FROM threads
+        WHERE discord_user_id=?
+    """, (str(user_id),)).fetchone()
     conn.close()
-    if not row:
-        return {"messages": [], "summary": ""}
-    return {"messages": json.loads(row[0]), "summary": row[1]}
 
-def save_thread(user_id: int, messages: List[Dict], summary: str) -> None:
+    if not row:
+        return {"messages": [], "summary": "", "summary_last_updated": ""}
+
+    messages = json.loads(row[0]) if row[0] else []
+    return {"messages": messages, "summary": row[1] or "", "summary_last_updated": row[2] or ""}
+
+def save_thread(user_id: int, messages: list[dict], summary: str, *, summary_last_updated: str | None = None) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    conn = db()
+    try:
+        # Keep existing summary_last_updated if not provided
+        if summary_last_updated is None:
+            
+            existing = conn.execute(
+                "SELECT summary_last_updated FROM threads WHERE discord_user_id=?",
+                (str(user_id),)
+            ).fetchone()
+            summary_ts = existing[0] if existing else ""
+        else:
+            summary_ts = summary_last_updated
+
+        conn.execute("""
+            INSERT INTO threads(discord_user_id, messages_json, summary_text, last_updated, summary_last_updated)
+            VALUES(?, ?, ?, ?, ?)
+            ON CONFLICT(discord_user_id) DO UPDATE SET
+                messages_json=excluded.messages_json,
+                summary_text=excluded.summary_text,
+                last_updated=excluded.last_updated,
+                summary_last_updated=excluded.summary_last_updated
+        """, (str(user_id), json.dumps(messages), summary, now, summary_ts))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_threads_needing_summary_refresh() -> list[dict]:
+    """
+    Returns rows for claimed players where last_updated > summary_last_updated (or summary_last_updated empty).
+    Includes: user_id, country, summary, messages, last_updated, summary_last_updated
+    """
+    conn = db()
+    rows = conn.execute("""
+        SELECT
+            t.discord_user_id,
+            p.country,
+            t.summary_text,
+            t.messages_json,
+            t.last_updated,
+            t.summary_last_updated
+        FROM threads t
+        JOIN players p ON p.discord_user_id = t.discord_user_id
+        WHERE p.country IS NOT NULL
+          AND (t.summary_last_updated = '' OR t.last_updated > t.summary_last_updated)
+    """).fetchall()
+    conn.close()
+
+    out = []
+    for uid, country, summary, msgs_json, last_upd, sum_upd in rows:
+        try:
+            msgs = json.loads(msgs_json) if msgs_json else []
+        except Exception:
+            msgs = []
+        out.append({
+            "user_id": int(uid),
+            "country": country,
+            "summary": summary or "",
+            "messages": msgs,
+            "last_updated": last_upd or "",
+            "summary_last_updated": sum_upd or "",
+        })
+    return out
+
+def build_batch_summary_payload(rows: list[dict]) -> dict:
+    payload = {}
+    for r in rows:
+        recent_lines = []
+        for m in r["messages"]:
+            role = (m.get("role") or "").upper()
+            content = (m.get("content") or "").strip()
+            if role and content:
+                recent_lines.append(f"{role}: {content}")
+
+        payload[r["country"]] = {
+            "summary": (r["summary"] or "").strip(),
+            "recent": recent_lines,
+        }
+    return payload
+
+def build_batch_summary_prompt(ai_country: str, payload: dict) -> str:
+    keys = list(payload.keys())
+    keys_json = json.dumps(keys)
+    return f"""
+You update private Diplomacy negotiation summaries for {ai_country}.
+
+CRITICAL RULES:
+- Each country key is independent. NEVER move facts between keys.
+- Only use information inside that key's "summary" and "recent".
+- Preserve who offered what, keep track of all parts offers.
+- If something is uncertain or tentative, mark it as such.
+- Keep it short and factual: commitments, timelines, DMZs, proposed supports, open questions.
+- Mark uncertainty clearly (firm vs tentative).
+
+OUTPUT:
+Return ONLY valid JSON: an object with EXACTLY these keys: {keys_json}
+Each value must be a string summary for that country.
+No extra keys, no commentary.
+
+INPUT:
+{json.dumps(payload)}
+""".strip()
+
+def parse_batch_summary(text: str, expected_keys: list[str]) -> dict[str, str] | None:
+    try:
+        data = json.loads(text)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if set(data.keys()) != set(expected_keys):
+        return None
+    out = {}
+    for k in expected_keys:
+        v = data.get(k)
+        if not isinstance(v, str):
+            return None
+        out[k] = v.strip()
+    return out
+
+
+def update_thread_summary_and_truncate(user_id: int, new_summary: str, *, keep_last_n_msgs: int = 2) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Load existing messages
+    thread = load_thread(user_id)
+    msgs = thread["messages"]
+    msgs = msgs[-keep_last_n_msgs:] if keep_last_n_msgs > 0 else []
+
     conn = db()
     conn.execute("""
-    INSERT INTO threads(discord_user_id, messages_json, summary_text, last_updated)
-    VALUES(?, ?, ?, ?)
-    ON CONFLICT(discord_user_id) DO UPDATE SET
-        messages_json=excluded.messages_json,
-        summary_text=excluded.summary_text,
-        last_updated=excluded.last_updated
-    """, (str(user_id), json.dumps(messages), summary, datetime.now(timezone.utc).isoformat()))
+        UPDATE threads
+        SET summary_text = ?,
+            messages_json = ?,
+            summary_last_updated = ?
+        WHERE discord_user_id = ?
+    """, (new_summary, json.dumps(msgs), now, str(user_id)))
     conn.commit()
     conn.close()
+
+def get_all_summaries_for_claimed_players() -> dict[str, str]:
+    conn = db()
+    rows = conn.execute("""
+        SELECT p.country, t.summary_text
+        FROM threads t
+        JOIN players p ON p.discord_user_id = t.discord_user_id
+        WHERE p.country IS NOT NULL
+    """).fetchall()
+    conn.close()
+    return {country: (summary or "").strip() for country, summary in rows}
+
 
 def check_and_update_cooldown(user_id: int, now_ts: float) -> bool:
     """Return True if allowed, False if on cooldown."""
@@ -178,12 +337,13 @@ client_ai = OpenAI(api_key=OPENAI_API_KEY)
 
 async def call_openai(system_prompt: str, user_text: str) -> str:
     resp = await asyncio.to_thread(
-        lambda: client_ai.responses.create(
+        lambda: client_ai.with_options(timeout=200.0).responses.create(
             model=OPENAI_MODEL,
             input=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_text},
             ],
+            service_tier=SERVICE_TIER
         )
     )
     out = []
@@ -194,13 +354,13 @@ async def call_openai(system_prompt: str, user_text: str) -> str:
                     out.append(c.text)
     return ("\n".join(out)).strip()
 
-async def maybe_summarize_thread(summary: str, messages: List[Dict]) -> str:
+async def maybe_summarize_thread(summary: str, messages: List[Dict]) -> tuple[str, bool]:
     """
     Summarize older messages when the history grows.
     Keeps a rolling summary + last RAW_TURNS_TO_KEEP messages.
     """
     if len(messages) <= RAW_TURNS_TO_KEEP:
-        return summary
+        return summary, False
 
     # Summarize everything except last RAW_TURNS_TO_KEEP
     older = messages[:-RAW_TURNS_TO_KEEP]
@@ -226,7 +386,7 @@ Return ONLY the updated summary.
     new_summary = await call_openai(system_prompt="You are a helpful summarizer.", user_text=prompt)
     # Replace messages with only the newer slice
     messages[:] = newer
-    return new_summary.strip()
+    return new_summary.strip(), True
 
 def build_dm_prompt(phase: str, state_text: str, summary: str, messages: List[Dict], user_country: Optional[str]) -> str:
     who = user_country or "Unclaimed Power"
@@ -244,17 +404,22 @@ Recent messages:
 {convo}
 """
 
-def build_orders_prompt(phase: str, state_text: str) -> str:
+def build_orders_prompt(phase: str, state_text: str, summaries: dict[str, str]) -> str:
+    # compact formatting, but readable
+    summaries_block = "\n".join([f"{c}: {s or '(none)'}" for c, s in sorted(summaries.items())])
+
     return f"""PHASE: {phase}
-AUTHORITATIVE PUBLIC GAME STATE (pasted by GM from Backstabbr):
+AUTHORITATIVE PUBLIC GAME STATE:
 {state_text}
+
+PRIVATE NEGOTIATION SUMMARIES (use to honor commitments if convenient; do not reveal):
+{summaries_block}
 
 TASK:
 Output ONLY {AI_COUNTRY}'s orders for the current phase in Backstabbr-style notation.
-One order per line.
-No extra text.
-If phase/state is missing or insufficient, ask for what you need in ONE short sentence (still no bullets).
+One order per line. No extra text.
 """
+
 
 # -------------------- Orders-only filter (console safety) --------------------
 
@@ -336,22 +501,48 @@ async def on_message(message: discord.Message):
                 await message.reply("I need both PHASE and STATE to generate orders.")
                 return
 
-            raw = await call_openai(SYSTEM_PROMPT, build_orders_prompt(phase, state_text))
+            # 1) Refresh summaries for threads that changed since last summary refresh
+            rows = get_threads_needing_summary_refresh()
+            if rows:
+                payload = build_batch_summary_payload(rows)
+                expected_keys = list(payload.keys())
+
+                sum_prompt = build_batch_summary_prompt(AI_COUNTRY, payload)
+                raw_sum = await call_openai(system_prompt="You are a helpful summarizer.", user_text=sum_prompt)
+                summaries = parse_batch_summary(raw_sum, expected_keys)
+
+                if summaries is not None:
+                    # apply updates + truncate messages to last 2 per your preference
+                    # map country -> user_id
+                    country_to_uid = {r["country"]: r["user_id"] for r in rows}
+                    for country, new_summary in summaries.items():
+                        uid = country_to_uid[country]
+                        update_thread_summary_and_truncate(uid, new_summary, keep_last_n_msgs=2)
+                else:
+                    await message.reply("⚠️ Failed to parse updated summaries from AI. Aborting orders generation.")
+                    return
+
+            # 2) Now build orders prompt using ONLY the (now fresh) summaries
+            # You need a helper to load all summaries for claimed players:
+            all_summaries = get_all_summaries_for_claimed_players()  
+            #Debug: print the prompt in the chat for testing purposes
+            await message.reply(build_orders_prompt(phase, state_text, all_summaries))
+
+            raw = await call_openai(SYSTEM_PROMPT, build_orders_prompt(phase, state_text, all_summaries))
             orders = extract_valid_orders(raw)
 
             if not orders:
-                # Re-ask once with an even stricter instruction
                 stricter = SYSTEM_PROMPT + "\n\nIMPORTANT: Output must be ONLY valid order lines. No other text."
-                raw2 = await call_openai(stricter, build_orders_prompt(phase, state_text))
+                raw2 = await call_openai(stricter, build_orders_prompt(phase, state_text, all_summaries))
                 orders = extract_valid_orders(raw2)
 
             if not orders:
-                # Last resort: safe failure message (no reasoning leak)
                 await message.reply("⚠️ I couldn't produce valid orders from the current input. Check phase/state formatting.")
                 return
 
             await message.reply("\n".join(orders))
             return
+
 
         # Ignore anything else in console (to avoid accidental chatter)
         return
@@ -388,7 +579,7 @@ async def on_message(message: discord.Message):
     msgs.append({"role": "user", "content": dm_text})
 
     # Summarize if needed
-    summary = await maybe_summarize_thread(summary, msgs)
+    summary, did_refresh = await maybe_summarize_thread(summary, msgs)
 
     # Build prompt & reply
     phase, state_text, _ = get_game_state()
@@ -396,7 +587,8 @@ async def on_message(message: discord.Message):
     reply = await call_openai(SYSTEM_PROMPT, prompt)
 
     msgs.append({"role": "assistant", "content": reply})
-    save_thread(message.author.id, msgs, summary)
+    save_thread(message.author.id, msgs, summary,
+                 summary_last_updated=datetime.now(timezone.utc).isoformat() if did_refresh else None)
 
     await message.reply(reply)
 
