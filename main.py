@@ -27,9 +27,12 @@ DB_PATH = os.environ.get("DB_PATH", "diplo_bot.sqlite3")
 
 # Limit how much raw DM history we feed each call (we'll also keep a summary).
 RAW_TURNS_TO_KEEP = int(os.environ.get("RAW_TURNS_TO_KEEP", "12"))
+MAX_CHARS_PER_MSG = int(os.environ.get("MAX_CHARS_PER_MSG", "1200"))
 
 # Basic cooldown per user to avoid spam & cost (seconds)
 USER_COOLDOWN_SECONDS = float(os.environ.get("USER_COOLDOWN_SECONDS", "30"))
+
+VALID_COUNTRIES = {"England","France","Germany","Italy","Austria","Russia","Turkey"}
 
 # -------------------- Prompts --------------------
 
@@ -70,6 +73,14 @@ def init_db() -> None:
         country TEXT
     )
     """)
+    
+    # Ensure uniqueness of country claims    
+    cur.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_players_country_unique
+                ON players(lower(country))
+                WHERE country IS NOT NULL AND country <> '';
+                """)
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS threads(
         discord_user_id TEXT PRIMARY KEY,
@@ -107,6 +118,20 @@ def init_db() -> None:
     conn.commit()
     conn.close()
 
+def get_claims() -> list[tuple[str, str, str]]:
+    """
+    Returns a list of (country, display_name, discord_user_id) for claimed players.
+    """
+    conn = db()
+    rows = conn.execute("""
+        SELECT country, display_name, discord_user_id
+        FROM players
+        WHERE country IS NOT NULL AND country <> ''
+        ORDER BY lower(country)
+    """).fetchall()
+    conn.close()
+    return [(c, n, uid) for (c, n, uid) in rows]
+
 def get_game_state():
     conn = db()
     row = conn.execute("SELECT phase, state_text, updated_at FROM game_state WHERE id=1").fetchone()
@@ -128,17 +153,49 @@ def set_game_state(phase: Optional[str] = None, state_text: Optional[str] = None
     conn.commit()
     conn.close()
 
-def upsert_player(user: discord.User, country: Optional[str]) -> None:
+def claim_country(user: discord.User, country: str) -> tuple[bool, str]:
+    """
+    Returns (ok, message).
+    Enforces:
+      - user cannot change claim once set
+      - country cannot be claimed by 2 users
+    """
+    country = country.strip()
+    if country not in VALID_COUNTRIES:
+        return False, f"Unknown country '{country}'. Valid: {', '.join(sorted(VALID_COUNTRIES))}"
+
     conn = db()
-    conn.execute("""
-    INSERT INTO players(discord_user_id, display_name, country)
-    VALUES(?, ?, ?)
-    ON CONFLICT(discord_user_id) DO UPDATE SET
-        display_name=excluded.display_name,
-        country=COALESCE(excluded.country, players.country)
-    """, (str(user.id), user.display_name, country))
-    conn.commit()
-    conn.close()
+    try:
+        # 1) Does this user already have a claim?
+        row = conn.execute(
+            "SELECT country FROM players WHERE discord_user_id=?",
+            (str(user.id),)
+        ).fetchone()
+
+        if row and row[0]:
+            # Already claimed: do not allow changes
+            return False, f"You already claimed **{row[0]}**. Claims for you are locked."
+
+        # 2) Try to insert (or update display_name if row exists but country is NULL)
+        # We rely on UNIQUE idx on lower(country) to prevent duplicates.
+        conn.execute("""
+            INSERT INTO players(discord_user_id, display_name, country)
+            VALUES(?, ?, ?)
+            ON CONFLICT(discord_user_id) DO UPDATE SET
+                display_name=excluded.display_name,
+                country=CASE
+                    WHEN players.country IS NULL OR players.country = '' THEN excluded.country
+                    ELSE players.country
+                END
+        """, (str(user.id), user.display_name, country))
+
+        conn.commit()
+        return True, f"✅ Registered you as **{country}**."
+    except sqlite3.IntegrityError:
+        # This will fire if another user already claimed that country due to UNIQUE index
+        return False, f"❌ **{country}** is already claimed by another player."
+    finally:
+        conn.close()
 
 def get_player_country(user_id: int) -> Optional[str]:
     conn = db()
@@ -172,7 +229,7 @@ def save_thread(user_id: int, messages: list[dict], summary: str, *, summary_las
                 "SELECT summary_last_updated FROM threads WHERE discord_user_id=?",
                 (str(user_id),)
             ).fetchone()
-            summary_ts = existing[0] if existing else ""
+            summary_ts = existing[0] if existing else now
         else:
             summary_ts = summary_last_updated
 
@@ -230,9 +287,12 @@ def build_batch_summary_payload(rows: list[dict]) -> dict:
     payload = {}
     for r in rows:
         recent_lines = []
-        for m in r["messages"]:
+        for m in r["messages"][-RAW_TURNS_TO_KEEP:]:
             role = (m.get("role") or "").upper()
             content = (m.get("content") or "").strip()
+            if len(content) > 1200:
+                print(f"Warning: Truncating long message for summary payload for user_id={r['user_id']}")
+                content = content[:MAX_CHARS_PER_MSG] + " [truncated]"
             if role and content:
                 recent_lines.append(f"{role}: {content}")
 
@@ -491,7 +551,22 @@ async def on_message(message: discord.Message):
         # status
         if content.lower().strip() == "status":
             phase, _, updated = get_game_state()
-            await message.reply(f"🧭 AI power: {AI_COUNTRY}\nPhase: {phase or '(unset)'}\nState updated: {updated or '(unset)'}")
+
+            claims = get_claims()
+            if claims:
+                claims_lines = "\n".join(
+                             f"- {country}: <@{uid}>"
+                                for country, _, uid in claims
+                            )
+            else:
+                claims_lines = "(none)"
+
+            await message.reply(
+                f"🧭 AI power: {AI_COUNTRY}\n"
+                f"Phase: {phase or '(unset)'}\n"
+                f"State updated: {updated or '(unset)'}\n"
+                f"\n👥 Claims:\n{claims_lines}"
+            )
             return
 
         # orders
@@ -565,13 +640,15 @@ async def on_message(message: discord.Message):
         if len(parts) < 2:
             await message.reply("Usage: `claim <Country>` (e.g., `claim England`).")
             return
-        country = parts[1].strip()
-        upsert_player(message.author, country=country)
-        await message.reply(f"✅ Registered you as **{country}** for our private negotiations.")
+        ok, msg = claim_country(message.author, parts[1])
+        await message.reply(msg)
         return
 
     # Load per-user thread
     user_country = get_player_country(message.author.id)
+    if not user_country:
+        await message.reply("⚠️ You need to `claim <Country>` first before negotiating. Your messages will be ignored until then.")
+        return
     thread = load_thread(message.author.id)
     msgs = thread["messages"]
     summary = thread["summary"]
