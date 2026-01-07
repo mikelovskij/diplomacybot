@@ -118,25 +118,28 @@ def parse_summaries(text: str, expected_keys: list[str]) -> dict[str, str] | Non
             return None
         out[k] = v.strip()
     return out
-
-async def maybe_summarize_thread(messages: List[Dict], user_country: str, current_summary: str) -> bool:
-    if len(messages) > RAW_TURNS_TO_KEEP:
-        # Prepare summarization payload while maintaining the last RAW_TURNS_TO_KEEP/2 messages
-
-        older = messages[:-RAW_TURNS_TO_KEEP//2]
-        newer = messages[-RAW_TURNS_TO_KEEP//2:]
-
-        payload = build_summary_payload([{"country": user_country,
-                                        "summary": current_summary,
-                                            "messages": older}],
-                                        ai_country=AI_COUNTRY,
-                                        max_recent_msgs=None,
-                                        )
-        updated_summary = await summarize_payload(AI_COUNTRY, payload)
-        if updated_summary and user_country in updated_summary:
-            summary = updated_summary[user_country]
-            messages[:] = newer # This modifies the original list in place
-
-        return summary, True
-    else:
+    
+async def maybe_summarize_thread(current_summary: str, user_country: str, messages: List[Dict]) -> tuple[str, bool]:
+    # Only summarize when too long
+    if len(messages) <= RAW_TURNS_TO_KEEP:
         return current_summary, False
+
+    # Keep last half as raw tail
+    keep = max(2, RAW_TURNS_TO_KEEP // 2)
+    older = messages[:-keep]
+    newer = messages[-keep:]
+
+    payload = build_summary_payload(
+        [{"country": user_country, "summary": current_summary, "messages": older}],
+        ai_country=AI_COUNTRY,
+        max_recent_msgs=None,
+    )
+    updated = await summarize_payload(AI_COUNTRY, payload)
+
+    # Default to existing summary if summarizer fails
+    new_summary = current_summary
+    if updated and user_country in updated:
+        new_summary = updated[user_country].strip()
+        messages[:] = newer  # truncate in place
+
+    return new_summary, True
