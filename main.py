@@ -43,6 +43,7 @@ def extract_valid_orders(text: str) -> List[str]:
 
 # Initialize database
 db = database(DB_PATH)
+orders_sent = False
 
 # -------------------- Discord --------------------
 
@@ -109,7 +110,20 @@ async def on_message(message: discord.Message):
             phase, state_text, _ = db.get_game_state()
             if not phase or not state_text.strip():
                 await message.reply("I need both PHASE and STATE before outreach.")
-                return
+                return            
+
+            
+            ai_memory = db.get_ai_memory()
+            all_summaries = db.get_all_summaries_for_claimed_players()
+            mem_prompt = pr.build_ai_memory_after_adjudication_prompt(
+                phase=phase,
+                state_text=state_text,
+                ai_memory=ai_memory,
+                summaries=all_summaries,
+            )
+            mem_after = await call_openai(system_prompt="You maintain a concise strategy journal.", user_text=mem_prompt)
+            db.set_ai_memory(mem_after.strip())
+
 
             # allow `outreach 2` override
             parts = content.split()
@@ -124,10 +138,13 @@ async def on_message(message: discord.Message):
                 system_prompt=SYSTEM_PROMPT,
                 phase=phase,
                 state_text=state_text,
+                ai_memory=mem_after.strip(),
                 max_messages=max_msgs,
             )
-
+            # Unlock press after outreach
+            db.set_press_locked(False)
             await message.reply(f"📨 Outreach complete. DMs sent: {n}")
+            
             return
 
         # orders
@@ -162,8 +179,8 @@ async def on_message(message: discord.Message):
             # 2) Now build orders prompt using ONLY the (now fresh) summaries
             # You need a helper to load all summaries for claimed players:
             all_summaries = db.get_all_summaries_for_claimed_players()
-
-            raw = await call_openai(SYSTEM_PROMPT, pr.build_orders_prompt(phase, state_text, all_summaries))
+            ai_memory = db.get_ai_memory()
+            raw = await call_openai(SYSTEM_PROMPT, pr.build_orders_prompt(phase, state_text, all_summaries, ai_memory))
             orders = extract_valid_orders(raw)
 
             if not orders:
@@ -176,7 +193,19 @@ async def on_message(message: discord.Message):
                 return
 
             await message.reply("\n".join(orders))
-            return
+            # Lock press until outreach
+            db.set_press_locked(True)
+
+            mem_prompt = pr.build_ai_memory_after_orders_prompt(
+                                                                phase=phase,
+                                                                state_text=state_text,
+                                                                ai_memory=ai_memory,
+                                                                summaries=all_summaries,
+                                                                orders=orders,
+                                                                 )
+        mem_after = await call_openai(system_prompt="You maintain a concise strategy journal.", user_text=mem_prompt)
+        db.set_ai_memory(mem_after.strip())
+        return
 
 
         # Ignore anything else in console (to avoid accidental chatter)
@@ -190,6 +219,9 @@ async def on_message(message: discord.Message):
     now_ts = datetime.now(timezone.utc).timestamp()
     if not db.check_and_update_cooldown(message.author.id, now_ts):
         # Keep it quiet; don't spam warnings. Just ignore rapid-fire.
+        return
+    if db.is_press_locked():
+        await message.reply("⚠️ The AI's press is currently locked. No negotiations are being accepted until adjudication and outreach.")
         return
 
     dm_text = message.content.strip()
@@ -220,7 +252,8 @@ async def on_message(message: discord.Message):
 
     # Build prompt & reply
     phase, state_text, _ = db.get_game_state()
-    prompt = pr.build_dm_prompt(phase, state_text, summary, msgs, user_country)
+    ai_memory = db.get_ai_memory()
+    prompt = pr.build_dm_prompt(phase, state_text, summary, msgs, user_country, ai_memory)
     reply = await call_openai(SYSTEM_PROMPT, prompt)
 
     msgs.append({"role": "assistant", "content": reply})

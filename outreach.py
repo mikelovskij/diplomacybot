@@ -22,7 +22,7 @@ def parse_outreach(text: str) -> list[dict]:
             out.append({"to": to.strip(), "message": msg.strip()})
     return out
 
-async def send_outreach(bot, db, call_openai, system_prompt: str, phase: str, state_text: str, max_messages: int = 3) -> int:
+async def send_outreach(bot, db, call_openai, system_prompt: str, phase: str, state_text: str, ai_memory: str, max_messages: int = 3) -> int:
     claims = db.get_claims()  # [(country, display_name, discord_user_id), ...]
     country_to_uid = {country: int(uid) for country, _, uid in claims if country}
 
@@ -34,7 +34,7 @@ async def send_outreach(bot, db, call_openai, system_prompt: str, phase: str, st
         return 0
 
     summaries = db.get_all_summaries_for_claimed_players()
-    prompt = build_outreach_prompt(phase, state_text, summaries, allowed, max_messages)
+    prompt = build_outreach_prompt(phase, state_text, summaries, ai_memory, allowed, max_messages)
 
     raw = await call_openai(system_prompt=system_prompt, user_text=prompt)
     proposals = parse_outreach(raw)

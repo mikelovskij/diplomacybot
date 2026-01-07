@@ -71,8 +71,16 @@ class database():
         commitments TEXT NOT NULL
         )
         """)
+
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS flags(
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            press_locked INTEGER NOT NULL
+        )
+        """)
         
         # Initialize empty rows if not present
+        cur.execute("INSERT OR IGNORE INTO flags(id, press_locked) VALUES(1, 0);")
         cur.execute("INSERT OR IGNORE INTO ai_memory(id, commitments) VALUES (1, '');")
         cur.execute("INSERT OR IGNORE INTO game_state(id, phase, state_text, updated_at) VALUES(1, '', '', '')")
         conn.commit()
@@ -317,4 +325,31 @@ class database():
                 "summary_last_updated": sum_upd or "",
             })
         return out
+    
+    # Commitment memory functions
+    def get_ai_memory(self) -> str:
+        conn = self.connect()
+        row = conn.execute("SELECT commitments FROM ai_memory WHERE id=1").fetchone()
+        conn.close()
+        return row[0] if row else ""
+
+    def set_ai_memory(self, text: str) -> None:
+        conn = self.connect()
+        conn.execute("UPDATE ai_memory SET commitments=? WHERE id=1", (text,))
+        conn.commit()
+        conn.close()
+
+    def is_press_locked(self) -> bool:
+        conn = self.connect()
+        row = conn.execute("SELECT press_locked FROM flags WHERE id=1").fetchone()
+        conn.close()
+        return bool(row[0]) if row else False
+
+    def set_press_locked(self, locked: bool) -> None:
+        conn = self.connect()
+        conn.execute("UPDATE flags SET press_locked=? WHERE id=1", (1 if locked else 0,))
+        conn.commit()
+        conn.close()
+
+
 
