@@ -33,6 +33,38 @@ Recent messages:
 {convo}
 """
 
+def build_outreach_prompt(phase: str, state_text: str, summaries: dict[str, str], allowed: list[str], max_messages: int) -> str:
+    allowed_list = ", ".join(sorted(allowed))
+    summaries_block = "\n".join([f"{c}: {s or '(none)'}" for c, s in sorted(summaries.items())])
+
+    return f"""PHASE: {phase}
+
+AUTHORITATIVE PUBLIC GAME STATE:
+{state_text}
+
+PRIVATE NEGOTIATION SUMMARIES (context only; do not reveal):
+{summaries_block}
+
+TASK:
+You are {AI_COUNTRY}. Propose diplomatic messages to other powers.
+
+Rules:
+- Send at most {max_messages} messages total. You may send zero.
+- You may ONLY send to: [{allowed_list}]
+- Do NOT mention any private negotiations with third parties.
+- Keep each message under 500 characters.
+- Be concrete (proposal, support, DMZ, question).
+
+OUTPUT:
+Return ONLY valid JSON:
+
+[
+  {{"to": "<Country>", "message": "<text>"}}
+]
+
+If no messages, return [].
+""".strip()
+
 def build_orders_prompt(phase: str, state_text: str, summaries: dict[str, str]) -> str:
     """Constructs the prompt for generating orders for the AI country.
     Includes phase, authoritative game state, and private negotiation summaries."""
