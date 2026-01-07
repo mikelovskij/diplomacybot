@@ -15,6 +15,7 @@ DB_PATH = os.environ.get("DB_PATH", "diplo_bot.sqlite3")
 # Limit how much raw DM history we feed each call (we'll also keep a summary).
 RAW_TURNS_TO_KEEP = int(os.environ.get("RAW_TURNS_TO_KEEP", "12"))
 MAX_CHARS_PER_MSG = int(os.environ.get("MAX_CHARS_PER_MSG", "1200"))
+OUTREACH_MAX_DEFAULT = int(os.environ.get("OUTREACH_MAX", "3"))
 
 # Basic cooldown per user to avoid spam & cost (seconds)
 USER_COOLDOWN_SECONDS = float(os.environ.get("USER_COOLDOWN_SECONDS", "30"))
