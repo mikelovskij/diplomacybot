@@ -7,9 +7,7 @@ from typing import List
 from database import database
 import summaries as summ
 import prompts as pr
-from config import AI_COUNTRY, SYSTEM_PROMPT
-
-from config import DISCORD_TOKEN, CONTROL_CHANNEL_ID, DB_PATH, AI_COUNTRY, USER_COOLDOWN_SECONDS
+from config import DISCORD_TOKEN, CONTROL_CHANNEL_ID, DB_PATH, AI_COUNTRY, SYSTEM_PROMPT, RAW_TURNS_TO_KEEP
 from openai_calls import call_openai
 
 import discord
@@ -41,6 +39,9 @@ def extract_valid_orders(text: str) -> List[str]:
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     valid = [ln for ln in lines if ORDER_RE.match(ln)]
     return valid
+
+# Initialize database
+db = database(DB_PATH)
 
 # -------------------- Discord --------------------
 
@@ -113,7 +114,8 @@ async def on_message(message: discord.Message):
             # 1) Refresh summaries for threads that changed since last summary refresh
             rows = db.get_threads_needing_summary_refresh()
             if rows:
-                payload = summ.build_summary_payload(rows)
+                payload = summ.build_summary_payload(rows, ai_country=AI_COUNTRY,
+                                                                max_recent_msgs=RAW_TURNS_TO_KEEP)
                 expected_keys = list(payload.keys())
 
                 sum_prompt = summ.build_summary_prompt(AI_COUNTRY, payload)
@@ -204,5 +206,4 @@ async def on_message(message: discord.Message):
     await message.reply(reply)
 
 if __name__ == "__main__":
-    db = database(DB_PATH)
     bot.run(DISCORD_TOKEN)

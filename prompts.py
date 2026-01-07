@@ -1,11 +1,25 @@
 from typing import List, Dict, Optional
 from config import AI_COUNTRY
+from summaries import messages_to_lines
 
-def build_dm_prompt(phase: str, state_text: str, summary: str, messages: List[Dict], user_country: Optional[str]) -> str:
+def build_dm_prompt(
+                    phase: str,
+                    state_text: str,
+                    summary: str,
+                    messages: List[Dict],
+                    user_country: Optional[str],
+                ) -> str:
     """Constructs the prompt for a private DM negotiation with a player.
-    Includes phase, authoritative game state, rolling summary, and recent messages."""
+    Includes phase, authoritative game state, summary of prior negotiation,
+    and recent messages in the conversation."""
     who = user_country or "Unclaimed Power"
-    convo = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages])
+    convo_lines = messages_to_lines(
+        messages,
+        ai_country=AI_COUNTRY,
+        player_country=who,
+    )
+    convo = "\n".join(convo_lines)
+
     return f"""PHASE: {phase}
 
 AUTHORITATIVE PUBLIC GAME STATE (pasted by GM from Backstabbr):
