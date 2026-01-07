@@ -8,7 +8,13 @@ def build_dm_prompt(phase: str, state_text: str, summary: str, messages: List[Di
     Includes phase, authoritative game state, summary of prior negotiation,
     a cropped version of AI's private memory, and recent messages in the conversation."""
     who = user_country or "Unclaimed Power"
-    convo = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages])
+    convo = "\n".join(
+                    messages_to_lines(
+                        messages,
+                        ai_country=AI_COUNTRY,
+                        player_country=who,
+                    )
+                     )
 
     # trim memory for DM context
     mem_trim = (ai_memory or "").strip()

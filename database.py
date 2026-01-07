@@ -80,7 +80,7 @@ class database():
         """)
         
         # Initialize empty rows if not present
-        cur.execute("INSERT OR IGNORE INTO flags(id, press_locked) VALUES(1, 0);")
+        cur.execute("INSERT OR IGNORE INTO flags(id, press_locked) VALUES(1, 1);")
         cur.execute("INSERT OR IGNORE INTO ai_memory(id, commitments) VALUES (1, '');")
         cur.execute("INSERT OR IGNORE INTO game_state(id, phase, state_text, updated_at) VALUES(1, '', '', '')")
         conn.commit()

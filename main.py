@@ -43,7 +43,6 @@ def extract_valid_orders(text: str) -> List[str]:
 
 # Initialize database
 db = database(DB_PATH)
-orders_sent = False
 
 # -------------------- Discord --------------------
 
@@ -131,19 +130,24 @@ async def on_message(message: discord.Message):
             if len(parts) == 2 and parts[1].isdigit():
                 max_msgs = max(0, min(6, int(parts[1])))  # clamp
 
-            n = await outreach.send_outreach(
-                bot=bot,
-                db=db,
-                call_openai=call_openai,
-                system_prompt=SYSTEM_PROMPT,
-                phase=phase,
-                state_text=state_text,
-                ai_memory=mem_after.strip(),
-                max_messages=max_msgs,
-            )
-            # Unlock press after outreach
-            db.set_press_locked(False)
-            await message.reply(f"📨 Outreach complete. DMs sent: {n}")
+            try:
+                n = await outreach.send_outreach(
+                    bot=bot,
+                    db=db,
+                    call_openai=call_openai,
+                    system_prompt=SYSTEM_PROMPT,
+                    phase=phase,
+                    state_text=state_text,
+                    ai_memory=mem_after.strip(),
+                    max_messages=max_msgs,
+                )
+                await message.reply(f"✅ Outreach sent to {n} players.")
+            except Exception as e:
+                await message.reply(f"⚠️ Outreach failed: {e}")
+            finally:
+                # Unlock press after outreach
+                db.set_press_locked(False)
+            
             
             return
 
@@ -185,7 +189,7 @@ async def on_message(message: discord.Message):
 
             if not orders:
                 stricter = SYSTEM_PROMPT + "\n\nIMPORTANT: Output must be ONLY valid order lines. No other text."
-                raw2 = await call_openai(stricter, pr.build_orders_prompt(phase, state_text, all_summaries))
+                raw2 = await call_openai(stricter, pr.build_orders_prompt(phase, state_text, all_summaries, ai_memory))
                 orders = extract_valid_orders(raw2)
 
             if not orders:
@@ -193,8 +197,7 @@ async def on_message(message: discord.Message):
                 return
 
             await message.reply("\n".join(orders))
-            # Lock press until outreach
-            db.set_press_locked(True)
+
 
             mem_prompt = pr.build_ai_memory_after_orders_prompt(
                                                                 phase=phase,
@@ -202,10 +205,16 @@ async def on_message(message: discord.Message):
                                                                 ai_memory=ai_memory,
                                                                 summaries=all_summaries,
                                                                 orders=orders,
-                                                                 )
-        mem_after = await call_openai(system_prompt="You maintain a concise strategy journal.", user_text=mem_prompt)
-        db.set_ai_memory(mem_after.strip())
-        return
+                                                                 )            
+            try:
+                mem_after = await call_openai(system_prompt="You maintain a concise strategy journal.", user_text=mem_prompt)
+                db.set_ai_memory(mem_after.strip())
+            except Exception as e:
+                await message.reply(f"⚠️ Failed to update AI memory after orders: {e}")
+
+            # Lock press until outreach
+            db.set_press_locked(True)
+            return
 
 
         # Ignore anything else in console (to avoid accidental chatter)
@@ -220,9 +229,6 @@ async def on_message(message: discord.Message):
     if not db.check_and_update_cooldown(message.author.id, now_ts):
         # Keep it quiet; don't spam warnings. Just ignore rapid-fire.
         return
-    if db.is_press_locked():
-        await message.reply("⚠️ The AI's press is currently locked. No negotiations are being accepted until adjudication and outreach.")
-        return
 
     dm_text = message.content.strip()
 
@@ -234,6 +240,11 @@ async def on_message(message: discord.Message):
             return
         ok, msg = db.claim_country(message.author, parts[1])
         await message.reply(msg)
+        return
+    
+    # Stop here if press is locked
+    if db.is_press_locked():
+        await message.reply("⚠️ The AI's press is currently locked. No negotiations are being accepted until adjudication and outreach.")
         return
 
     # Load per-user thread
