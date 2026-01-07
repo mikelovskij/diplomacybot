@@ -2,6 +2,9 @@ import os
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+SERVICE_TIER = os.environ.get("SERVICE_TIER", "flex")  # e.g., "standard", "flex" (cheaper, slower)
 
 AI_COUNTRY = os.environ.get("AI_COUNTRY", "Austria")
 # Channel in your Discord server used to paste state and request orders.

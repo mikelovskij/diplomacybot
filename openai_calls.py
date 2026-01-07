@@ -1,10 +1,7 @@
 from openai import OpenAI
 import os
 import asyncio
-
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
-SERVICE_TIER = os.environ.get("SERVICE_TIER", "flex")  # e.g., "standard", "flex" (cheaper, slower)
+from config import OPENAI_API_KEY, OPENAI_MODEL, SERVICE_TIER
 
 client_ai = OpenAI(api_key=OPENAI_API_KEY)
 
