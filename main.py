@@ -135,9 +135,7 @@ async def on_message(message: discord.Message):
 
             # 2) Now build orders prompt using ONLY the (now fresh) summaries
             # You need a helper to load all summaries for claimed players:
-            all_summaries = db.get_all_summaries_for_claimed_players()  
-            #Debug: print the prompt in the chat for testing purposes
-            await message.reply(pr.build_orders_prompt(phase, state_text, all_summaries))
+            all_summaries = db.get_all_summaries_for_claimed_players()
 
             raw = await call_openai(SYSTEM_PROMPT, pr.build_orders_prompt(phase, state_text, all_summaries))
             orders = extract_valid_orders(raw)
