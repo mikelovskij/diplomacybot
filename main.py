@@ -113,12 +113,12 @@ async def on_message(message: discord.Message):
             # 1) Refresh summaries for threads that changed since last summary refresh
             rows = db.get_threads_needing_summary_refresh()
             if rows:
-                payload = summ.build_batch_summary_payload(rows)
+                payload = summ.build_summary_payload(rows)
                 expected_keys = list(payload.keys())
 
-                sum_prompt = summ.build_batch_summary_prompt(AI_COUNTRY, payload)
+                sum_prompt = summ.build_summary_prompt(AI_COUNTRY, payload)
                 raw_sum = await call_openai(system_prompt="You are a helpful summarizer.", user_text=sum_prompt)
-                summaries = summ.parse_batch_summary(raw_sum, expected_keys)
+                summaries = summ.parse_summaries(raw_sum, expected_keys)
 
                 if summaries is not None:
                     # apply updates + truncate messages to last 2 per your preference
@@ -126,7 +126,7 @@ async def on_message(message: discord.Message):
                     country_to_uid = {r["country"]: r["user_id"] for r in rows}
                     for country, new_summary in summaries.items():
                         uid = country_to_uid[country]
-                        summ.update_thread_summary_and_truncate(uid, new_summary, keep_last_n_msgs=2)
+                        db.update_thread_summary_and_truncate(uid, new_summary, keep_last_n_msgs=2)
                 else:
                     await message.reply("⚠️ Failed to parse updated summaries from AI. Aborting orders generation.")
                     return
