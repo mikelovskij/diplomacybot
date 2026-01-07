@@ -1,1 +1,4 @@
 .micromamba/
+*.sqlite3
+environment.yml
+settings.json

@@ -7,8 +7,9 @@ from typing import List
 from database import database
 import summaries as summ
 import prompts as pr
-from config import DISCORD_TOKEN, CONTROL_CHANNEL_ID, DB_PATH, AI_COUNTRY, SYSTEM_PROMPT, RAW_TURNS_TO_KEEP
+from config import DISCORD_TOKEN, CONTROL_CHANNEL_ID, DB_PATH, AI_COUNTRY, SYSTEM_PROMPT, RAW_TURNS_TO_KEEP, OUTREACH_MAX_DEFAULT
 from openai_calls import call_openai
+import outreach
 
 import discord
 from discord.ext import commands
@@ -102,6 +103,31 @@ async def on_message(message: discord.Message):
                 f"State updated: {updated or '(unset)'}\n"
                 f"\n👥 Claims:\n{claims_lines}"
             )
+            return
+        
+        if content.lower().startswith("outreach"):
+            phase, state_text, _ = db.get_game_state()
+            if not phase or not state_text.strip():
+                await message.reply("I need both PHASE and STATE before outreach.")
+                return
+
+            # allow `outreach 2` override
+            parts = content.split()
+            max_msgs = OUTREACH_MAX_DEFAULT
+            if len(parts) == 2 and parts[1].isdigit():
+                max_msgs = max(0, min(6, int(parts[1])))  # clamp
+
+            n = await outreach.send_outreach(
+                bot=bot,
+                db=db,
+                call_openai=call_openai,
+                system_prompt=SYSTEM_PROMPT,
+                phase=phase,
+                state_text=state_text,
+                max_messages=max_msgs,
+            )
+
+            await message.reply(f"📨 Outreach complete. DMs sent: {n}")
             return
 
         # orders
