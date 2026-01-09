@@ -15,7 +15,7 @@ DB_PATH = os.environ.get("DB_PATH", "diplo_bot.sqlite3")
 
 # Limit how much raw DM history we feed each call (we'll also keep a summary).
 RAW_TURNS_TO_KEEP = int(os.environ.get("RAW_TURNS_TO_KEEP", "12"))
-MAX_CHARS_PER_MSG = int(os.environ.get("MAX_CHARS_PER_MSG", "1200"))
+MAX_CHARS_PER_MSG = int(os.environ.get("MAX_CHARS_PER_MSG", "1500"))
 OUTREACH_MAX_DEFAULT = int(os.environ.get("OUTREACH_MAX", "3"))
 MEMORY_TRIM_LENGTH_DM = int(os.environ.get("MEMORY_TRIM_LENGTH_DM", "1500"))  # How much AI memory is used in DM context
 
