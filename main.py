@@ -7,7 +7,7 @@ from typing import List
 from database import database
 import summaries as summ
 import prompts as pr
-from config import DISCORD_TOKEN, CONTROL_CHANNEL_ID, DB_PATH, AI_COUNTRY, SYSTEM_PROMPT, RAW_TURNS_TO_KEEP, OUTREACH_MAX_DEFAULT
+from config import DISCORD_TOKEN, CONTROL_CHANNEL_ID, DB_PATH, AI_COUNTRY, SYSTEM_PROMPT, RAW_TURNS_TO_KEEP, OUTREACH_MAX_DEFAULT, SMART_OPENAI_MODEL
 from openai_calls import call_openai
 import outreach
 
@@ -120,7 +120,8 @@ async def on_message(message: discord.Message):
                 ai_memory=ai_memory,
                 summaries=all_summaries,
             )
-            mem_after = await call_openai(system_prompt="You maintain a concise strategy journal.", user_text=mem_prompt)
+            mem_after = await call_openai(system_prompt="You maintain a concise strategy journal.",
+                                          user_text=mem_prompt, model=SMART_OPENAI_MODEL)
             db.set_ai_memory(mem_after.strip())
 
 
@@ -166,7 +167,8 @@ async def on_message(message: discord.Message):
                 expected_keys = list(payload.keys())
 
                 sum_prompt = summ.build_summary_prompt(AI_COUNTRY, payload)
-                raw_sum = await call_openai(system_prompt="You are a helpful summarizer.", user_text=sum_prompt)
+                raw_sum = await call_openai(system_prompt="You are a helpful summarizer.", user_text=sum_prompt,
+                                            model=SMART_OPENAI_MODEL)
                 summaries = summ.parse_summaries(raw_sum, expected_keys)
 
                 if summaries is not None:
@@ -184,7 +186,8 @@ async def on_message(message: discord.Message):
             # You need a helper to load all summaries for claimed players:
             all_summaries = db.get_all_summaries_for_claimed_players()
             ai_memory = db.get_ai_memory()
-            raw = await call_openai(SYSTEM_PROMPT, pr.build_orders_prompt(phase, state_text, all_summaries, ai_memory))
+            raw = await call_openai(SYSTEM_PROMPT, pr.build_orders_prompt(phase, state_text, all_summaries, ai_memory),
+                                    model=SMART_OPENAI_MODEL)
             orders = extract_valid_orders(raw)
 
             if not orders:

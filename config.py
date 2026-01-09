@@ -3,7 +3,8 @@ import os
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+BASE_OPENAI_MODEL = os.environ.get("BASE_OPENAI_MODEL", "gpt-5-mini") # Used for interaction with players
+SMART_OPENAI_MODEL = os.environ.get("SMART_OPENAI_MODEL", "gpt-5.2") # Used for summaries and orders generation
 SERVICE_TIER = os.environ.get("SERVICE_TIER", "flex")  # e.g., "standard", "flex" (cheaper, slower)
 
 AI_COUNTRY = os.environ.get("AI_COUNTRY", "Austria")
@@ -16,6 +17,7 @@ DB_PATH = os.environ.get("DB_PATH", "diplo_bot.sqlite3")
 RAW_TURNS_TO_KEEP = int(os.environ.get("RAW_TURNS_TO_KEEP", "12"))
 MAX_CHARS_PER_MSG = int(os.environ.get("MAX_CHARS_PER_MSG", "1200"))
 OUTREACH_MAX_DEFAULT = int(os.environ.get("OUTREACH_MAX", "3"))
+MEMORY_TRIM_LENGTH_DM = int(os.environ.get("MEMORY_TRIM_LENGTH_DM", "1500"))  # How much AI memory is used in DM context
 
 # Basic cooldown per user to avoid spam & cost (seconds)
 USER_COOLDOWN_SECONDS = float(os.environ.get("USER_COOLDOWN_SECONDS", "30"))

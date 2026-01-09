@@ -1,5 +1,5 @@
 from typing import List, Dict, Optional
-from config import AI_COUNTRY
+from config import AI_COUNTRY, MEMORY_TRIM_LENGTH_DM
 from summaries import messages_to_lines
 
 
@@ -18,8 +18,8 @@ def build_dm_prompt(phase: str, state_text: str, summary: str, messages: List[Di
 
     # trim memory for DM context
     mem_trim = (ai_memory or "").strip()
-    if len(mem_trim) > 800:
-        mem_trim = mem_trim[:800] + "…"
+    if len(mem_trim) > MEMORY_TRIM_LENGTH_DM:
+        mem_trim = mem_trim[:MEMORY_TRIM_LENGTH_DM] + "…"
 
     return f"""PHASE: {phase}
 
@@ -43,8 +43,8 @@ def build_outreach_prompt(phase: str, state_text: str, summaries: dict[str, str]
 
     # trim memory for DM context
     mem_trim = (ai_memory or "").strip()
-    if len(mem_trim) > 800:
-        mem_trim = mem_trim[:800] + "…"
+    if len(mem_trim) > MEMORY_TRIM_LENGTH_DM:
+        mem_trim = mem_trim[:MEMORY_TRIM_LENGTH_DM] + "…"
 
     return f"""PHASE: {phase}
 
