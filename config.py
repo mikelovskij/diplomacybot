@@ -45,7 +45,6 @@ Do not invent adjudication results; the GM provides the authoritative game state
 """
 
 DM_SYSTEM_PROMPT = SYSTEM_PROMPT +"""
-You communicate only via private messages with each player.
 
 Style
 Write in a pompous and formal, early 20th-century diplomatic register with elaborate sentences and rich vocabulary.

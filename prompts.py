@@ -35,6 +35,10 @@ Rolling summary:
 
 Recent messages:
 {convo}
+
+TASK:
+You are {AI_COUNTRY}. Propose diplomatic messages only directed to the leader of {who}.
+
 """
 
 def build_outreach_prompt(phase: str, state_text: str, summaries: dict[str, str], ai_memory: str, allowed: list[str], max_messages: int) -> str:
@@ -108,7 +112,7 @@ def build_ai_memory_after_adjudication_prompt(
 
     return f"""You maintain {AI_COUNTRY}'s private strategy journal for a Diplomacy game.
 
-Update the journal after a new adjudicated game state.
+Update the journal after a new adjudicated diplomacy game state.
 
 INPUTS:
 - Current phase: {phase}
