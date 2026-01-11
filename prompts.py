@@ -38,6 +38,7 @@ Recent messages:
 
 TASK:
 You are {AI_COUNTRY}. Propose diplomatic messages only directed to the leader of {who}.
+Keep the lenght of the message BELOW 2000 characters or it will be trimmed. 
 
 """
 

@@ -274,7 +274,7 @@ async def on_message(message: discord.Message):
     db.save_thread(message.author.id, msgs, summary,
                  summary_last_updated=datetime.now(timezone.utc).isoformat() if did_refresh else None)
 
-    await message.reply(reply)
+    await message.reply(reply[:1995] + "..." )
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
