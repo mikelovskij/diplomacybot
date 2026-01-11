@@ -32,7 +32,7 @@ def messages_to_lines(messages: list[dict],
                       *,
                       ai_country: str,
                       player_country: str,
-                      max_chars_per_msg: int = 1200,
+                      max_chars_per_msg: int = 1500,
                       ) -> list[str]:
     """
     Convert message objects to formatted text lines.
@@ -42,7 +42,7 @@ def messages_to_lines(messages: list[dict],
     :param messages: List of message dictionaries with 'role' and 'content' keys
     :param ai_country: Country name for AI messages
     :param player_country: Country name for player messages
-    :param max_chars_per_msg: Maximum characters per message before truncation (default: 1200)
+    :param max_chars_per_msg: Maximum characters per message before truncation (default: 1500)
     :return: List of formatted message strings as "ROLE(COUNTRY): content"
     """
     lines: list[str] = []
@@ -58,6 +58,7 @@ def messages_to_lines(messages: list[dict],
             lines.append(f"PLAYER({player_country}): {content}")
         else:
             lines.append(f"AI({ai_country}): {content}")
+        lines.append("\n")
     return lines
 
 def build_summary_payload(threads: list[dict],
