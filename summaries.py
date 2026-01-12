@@ -16,7 +16,7 @@ CRITICAL RULES:
 - Only use information inside that key's "summary" and "recent".
 - Preserve who offered what, keep track of all parts offers.
 - If something is uncertain or tentative, mark it as such.
-- Keep it short and factual: commitments, timelines, DMZs, proposed supports, open questions.
+- Keep it short (500 char max) and factual: commitments, timelines, DMZs, proposed supports, open questions.
 - Mark uncertainty clearly (firm vs tentative).
 
 OUTPUT:
@@ -58,7 +58,7 @@ def messages_to_lines(messages: list[dict],
             lines.append(f"PLAYER({player_country}): {content}")
         else:
             lines.append(f"AI({ai_country}): {content}")
-        lines.append("\n")
+        lines.append("\n\n")
     return lines
 
 def build_summary_payload(threads: list[dict],
