@@ -192,7 +192,8 @@ async def on_message(message: discord.Message):
 
             if not orders:
                 stricter = ORDERS_SYSTEM_PROMPT + "\n\nIMPORTANT: Output must be ONLY valid order lines. No other text."
-                raw2 = await call_openai(stricter, pr.build_orders_prompt(phase, state_text, all_summaries, ai_memory))
+                await message.reply("⚠️ First order attempt not valid, re-trying...")
+                raw2 = await call_openai(stricter, pr.build_orders_prompt(phase, state_text, all_summaries, ai_memory), model=SMART_OPENAI_MODEL)
                 orders = extract_valid_orders(raw2)
 
             if not orders:

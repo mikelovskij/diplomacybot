@@ -1,6 +1,6 @@
 import json
 import asyncio
-from config import AI_COUNTRY
+from config import AI_COUNTRY, SMART_OPENAI_MODEL
 from prompts import build_outreach_prompt  
 
 
@@ -36,7 +36,7 @@ async def send_outreach(bot, db, call_openai, system_prompt: str, phase: str, st
     summaries = db.get_all_summaries_for_claimed_players()
     prompt = build_outreach_prompt(phase, state_text, summaries, ai_memory, allowed, max_messages)
 
-    raw = await call_openai(system_prompt=system_prompt, user_text=prompt)
+    raw = await call_openai(system_prompt=system_prompt, user_text=prompt, model=SMART_OPENAI_MODEL)
     proposals = parse_outreach(raw)
 
     sent = 0
