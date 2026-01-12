@@ -60,6 +60,12 @@ async def send_outreach(bot, db, call_openai, system_prompt: str, phase: str, st
             await user.send(msg)
             used.add(to)
             sent += 1
+            # Save the message in the database
+            thread = db.load_thread(country_to_uid[to])
+            msgs = thread["messages"]
+            summary = thread["summary"]
+            msgs.append({"role": "assistant", "content": msg})
+            db.save_thread(country_to_uid[to], msgs, summary, summary_last_updated=None)
             await asyncio.sleep(0.6)
         except Exception:
             continue
