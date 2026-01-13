@@ -16,7 +16,7 @@ CRITICAL RULES:
 - Only use information inside that key's "summary" and "recent".
 - Preserve who offered what, keep track of all parts offers.
 - If something is uncertain or tentative, mark it as such.
-- Keep it short (500 char max) and factual: commitments, timelines, DMZs, proposed supports, open questions.
+- Keep it short (1000 char max) and factual: commitments, timelines, DMZs, proposed supports, open questions.
 - Mark uncertainty clearly (firm vs tentative).
 
 OUTPUT:
