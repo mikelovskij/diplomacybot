@@ -173,6 +173,52 @@ class database():
         """).fetchall()
         conn.close()
         return [(c, n, uid) for (c, n, uid) in rows]
+    
+    def gm_set_claim(self, user_id: int, country: str, *, display_name: str | None = None) -> tuple[bool, str]:
+        """
+        GM override: assign a country to a user id.
+        - Enforces unique country (cannot assign if already claimed by someone else).
+        - Overwrites the user's existing claim (GM power).
+        - Creates player row if missing.
+        """
+        country = country.strip()
+        if country not in self.valid_countries:
+            return False, f"Unknown country '{country}'. Valid: {', '.join(sorted(self.valid_countries))}"
+
+        conn = self.connect()
+        try:
+            # Is country already claimed by someone else?
+            row = conn.execute(
+                "SELECT discord_user_id, display_name FROM players WHERE lower(country)=lower(?)",
+                (country,)
+            ).fetchone()
+            if row and str(row[0]) != str(user_id):
+                return False, f"❌ **{country}** is already claimed by <@{row[0]}> ({row[1]})."
+
+            # Ensure player row exists (or update display_name)
+            name = display_name or f"user_{user_id}"
+            conn.execute("""
+                INSERT INTO players(discord_user_id, display_name, country)
+                VALUES(?, ?, ?)
+                ON CONFLICT(discord_user_id) DO UPDATE SET
+                    display_name=excluded.display_name,
+                    country=excluded.country
+            """, (str(user_id), name, country))
+
+            conn.commit()
+            return True, f"✅ GM assigned <@{user_id}> to **{country}**."
+        except sqlite3.IntegrityError:
+            # Should be rare due to the check above, but keep a friendly message
+            return False, f"❌ Could not assign **{country}** (already claimed)."
+        finally:
+            conn.close()
+
+    def gm_clear_claim(self, user_id: int) -> tuple[bool, str]:
+        conn = self.connect()
+        conn.execute("UPDATE players SET country=NULL WHERE discord_user_id=?", (str(user_id),))
+        conn.commit()
+        conn.close()
+        return True, f"✅ Cleared claim for <@{user_id}>."
 
     def load_thread(self, user_id: int) -> dict:
         conn = self.connect()

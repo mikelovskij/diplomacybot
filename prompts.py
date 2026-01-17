@@ -30,7 +30,7 @@ PRIVATE STRATEGY NOTES (do not reveal; keep consistent):
 {mem_trim}
 
 PRIVATE NEGOTIATION with: {who}
-Rolling summary:
+Older interactions summary:
 {summary}
 
 Recent messages:
@@ -69,7 +69,7 @@ Rules:
 - Send at most {max_messages} messages total. You may send zero.
 - You may ONLY send to: [{allowed_list}]
 - Do NOT mention any private negotiations with third parties.
-- Keep each message under 500 characters.
+- Keep each message under 1000 characters.
 - Be concrete (proposal, support, DMZ, question).
 
 OUTPUT:

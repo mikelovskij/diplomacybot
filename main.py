@@ -219,6 +219,39 @@ async def on_message(message: discord.Message):
             # Lock press until outreach
             db.set_press_locked(True)
             return
+        
+        # setclaim <discord_user_id> <Country>
+        if content.lower().startswith("setclaim"):
+            parts = content.split(maxsplit=2)
+            if len(parts) < 3:
+                await message.reply("Usage: `setclaim <discord_user_id> <Country>` (e.g. `setclaim 123456789012345678 England`)")
+                return
+            try:
+                uid = int(parts[1])
+            except ValueError:
+                await message.reply("❌ Invalid discord_user_id (must be an integer).")
+                return
+
+            country = parts[2].strip()
+            ok, msg = db.gm_set_claim(uid, country)
+            await message.reply(msg)
+            return
+
+        # clearclaim <discord_user_id>
+        if content.lower().startswith("clearclaim"):
+            parts = content.split(maxsplit=1)
+            if len(parts) < 2:
+                await message.reply("Usage: `clearclaim <discord_user_id>`")
+                return
+            try:
+                uid = int(parts[1])
+            except ValueError:
+                await message.reply("❌ Invalid discord_user_id (must be an integer).")
+                return
+
+            ok, msg = db.gm_clear_claim(uid)
+            await message.reply(msg)
+            return
 
 
         # Ignore anything else in console (to avoid accidental chatter)
