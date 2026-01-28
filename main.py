@@ -161,7 +161,8 @@ async def on_message(message: discord.Message):
             db.set_ai_memory(mem_after.strip())            
 
             # Unlock press after recap
-            db.set_press_locked(False)            
+            db.set_press_locked(False)
+            await message.reply(f"✅ Recap complete and press unlocked.")         
             
             return
 
