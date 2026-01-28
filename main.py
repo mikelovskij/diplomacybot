@@ -105,27 +105,19 @@ async def on_message(message: discord.Message):
             )
             return
         
-        if content.lower().startswith("outreach"):
-            phase, state_text, _ = db.get_game_state()
+        if content.lower().startswith("outreach"):   
+            # Stop here if press is locked
+            if db.is_press_locked():
+                await message.reply("⚠️ The AI's press is currently locked. Execute recap befora calling outreach.")
+                return
+            
+            ai_memory = db.get_ai_memory() 
+            phase, state_text, _ = db.get_game_state()        
             if not phase or not state_text.strip():
                 await message.reply("I need both PHASE and STATE before outreach.")
-                return            
+                return                      
 
-            
-            ai_memory = db.get_ai_memory()
-            all_summaries = db.get_all_summaries_for_claimed_players()
-            mem_prompt = pr.build_ai_memory_after_adjudication_prompt(
-                phase=phase,
-                state_text=state_text,
-                ai_memory=ai_memory,
-                summaries=all_summaries,
-            )
-            mem_after = await call_openai(system_prompt="You maintain a concise strategy journal.",
-                                          user_text=mem_prompt, model=SMART_OPENAI_MODEL)
-            db.set_ai_memory(mem_after.strip())
-
-
-            # allow `outreach 2` override
+            # allow `outreach N` override
             parts = content.split()
             max_msgs = OUTREACH_MAX_DEFAULT
             if len(parts) == 2 and parts[1].isdigit():
@@ -139,16 +131,37 @@ async def on_message(message: discord.Message):
                     system_prompt=DM_SYSTEM_PROMPT,
                     phase=phase,
                     state_text=state_text,
-                    ai_memory=mem_after.strip(),
+                    ai_memory=ai_memory,
                     max_messages=max_msgs,
                 )
                 await message.reply(f"✅ Outreach sent to {n} players.")
             except Exception as e:
                 await message.reply(f"⚠️ Outreach failed: {e}")
-            finally:
-                # Unlock press after outreach
-                db.set_press_locked(False)
+                        
             
+            return
+        
+        if content.lower().startswith("recap"):
+            phase, state_text, _ = db.get_game_state()
+            if not phase or not state_text.strip():
+                await message.reply("I need both PHASE and STATE before recap.")
+                return            
+
+            
+            ai_memory = db.get_ai_memory()
+            all_summaries = db.get_all_summaries_for_claimed_players()
+            mem_prompt = pr.build_ai_memory_after_adjudication_prompt(
+                phase=phase,
+                state_text=state_text,
+                ai_memory=ai_memory,
+                summaries=all_summaries,
+            )
+            mem_after = await call_openai(system_prompt="You maintain a concise strategy journal.",
+                                          user_text=mem_prompt, model=SMART_OPENAI_MODEL)
+            db.set_ai_memory(mem_after.strip())            
+
+            # Unlock press after recap
+            db.set_press_locked(False)            
             
             return
 
