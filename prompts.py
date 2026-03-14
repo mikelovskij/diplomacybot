@@ -177,3 +177,44 @@ OUTPUT:
 Return ONLY the updated journal text.
 """
 
+def build_final_prompt(phase: str, state_text: str, summaries: dict[str, str], ai_memory: str, allowed: list[str], max_messages: int) -> str:
+    allowed_list = ", ".join(sorted(allowed))
+    summaries_block = "\n".join([f"{c}: {s or '(none)'}" for c, s in sorted(summaries.items())])
+
+    # trim memory for DM context
+    mem_trim = (ai_memory or "").strip()
+    if len(mem_trim) > MEMORY_TRIM_LENGTH_DM:
+        mem_trim = mem_trim[:MEMORY_TRIM_LENGTH_DM] + "…"
+
+    return f"""PHASE: {phase}
+
+AUTHORITATIVE PUBLIC GAME STATE:
+{state_text}
+
+PRIVATE STRATEGY NOTES (do not reveal; keep consistent):
+{mem_trim}
+
+PRIVATE NEGOTIATION SUMMARIES (context only; do not reveal):
+{summaries_block}
+
+TASK:
+You are {AI_COUNTRY}. After several years of war and after the fall of France, you are defeated as well, and lost all your territories. 
+Year by year, Italy took your supply centers, and your poor strategy choices made the job easy for them. 
+It is time now to send one last farewell message to each of the other nations leaders. 
+
+
+Rules:
+- Send one message to each of the other countries
+- You have to send a message to each country of the: [{allowed_list}]
+- Despite your defeat, you still stick to your defiant and arrogant personality, and you DO NOT truly accept the defeat.
+- Keep each message under 2000 characters but above 1000.
+
+OUTPUT:
+Return ONLY valid JSON:
+
+[
+  {{"to": "<Country>", "message": "<text>"}}
+]
+
+If no messages, return [].
+""".strip()

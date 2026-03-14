@@ -29,7 +29,7 @@ def format_backstabbr(text: str) -> str:
         # Remove empty lines inside the block, keep content lines only
         content = [ln for ln in buffer if ln.strip()]
         out.append(current_power)
-        out.append("-" * 30)
+        out.append("-" * 5)
         out.extend(content)
         out.append("")  # blank line between countries
         buffer = []

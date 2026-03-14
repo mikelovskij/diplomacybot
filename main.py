@@ -141,6 +141,37 @@ async def on_message(message: discord.Message):
             
             return
         
+        if content.lower().startswith("final_message"):   
+            # Stop here if press is locked
+            if db.is_press_locked():
+                await message.reply("⚠️ The AI's press is currently locked. Execute recap befora calling final message.")
+                return
+            
+            ai_memory = db.get_ai_memory() 
+            phase, state_text, _ = db.get_game_state()        
+            if not phase or not state_text.strip():
+                await message.reply("I need both PHASE and STATE before final_message.")
+                return                      
+
+            
+            try:
+                n = await outreach.send_final_message(
+                    bot=bot,
+                    db=db,
+                    call_openai=call_openai,
+                    system_prompt=DM_SYSTEM_PROMPT,
+                    phase=phase,
+                    state_text=state_text,
+                    ai_memory=ai_memory,
+                    max_messages=max_msgs,
+                )
+                await message.reply(f"✅ Final message sent to {n} players.")
+            except Exception as e:
+                await message.reply(f"⚠️ Final message failed: {e}")
+                        
+            
+            return
+        
         if content.lower().startswith("recap"):
             phase, state_text, _ = db.get_game_state()
             if not phase or not state_text.strip():
