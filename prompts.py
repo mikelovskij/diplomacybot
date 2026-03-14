@@ -177,7 +177,7 @@ OUTPUT:
 Return ONLY the updated journal text.
 """
 
-def build_final_prompt(phase: str, state_text: str, summaries: dict[str, str], ai_memory: str, allowed: list[str], max_messages: int) -> str:
+def build_final_prompt(phase: str, state_text: str, summaries: dict[str, str], ai_memory: str, allowed: list[str]) -> str:
     allowed_list = ", ".join(sorted(allowed))
     summaries_block = "\n".join([f"{c}: {s or '(none)'}" for c, s in sorted(summaries.items())])
 

@@ -163,7 +163,6 @@ async def on_message(message: discord.Message):
                     phase=phase,
                     state_text=state_text,
                     ai_memory=ai_memory,
-                    max_messages=max_msgs,
                 )
                 await message.reply(f"✅ Final message sent to {n} players.")
             except Exception as e:

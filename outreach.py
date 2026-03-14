@@ -73,7 +73,7 @@ async def send_outreach(bot, db, call_openai, system_prompt: str, phase: str, st
     return sent
 
 
-async def send_final_message(bot, db, call_openai, system_prompt: str, phase: str, state_text: str, ai_memory: str, max_messages: int = 3) -> int:
+async def send_final_message(bot, db, call_openai, system_prompt: str, phase: str, state_text: str, ai_memory: str) -> int:
     claims = db.get_claims()  # [(country, display_name, discord_user_id), ...]
     country_to_uid = {country: int(uid) for country, _, uid in claims if country}
 
@@ -85,7 +85,7 @@ async def send_final_message(bot, db, call_openai, system_prompt: str, phase: st
         return 0
 
     summaries = db.get_all_summaries_for_claimed_players()
-    prompt = build_final_prompt(phase, state_text, summaries, ai_memory, allowed, max_messages)
+    prompt = build_final_prompt(phase, state_text, summaries, ai_memory, allowed)
 
     raw = await call_openai(system_prompt=system_prompt, user_text=prompt, model=SMART_OPENAI_MODEL)
     proposals = parse_outreach(raw)
@@ -94,8 +94,6 @@ async def send_final_message(bot, db, call_openai, system_prompt: str, phase: st
     used = set()
 
     for p in proposals:
-        if sent >= max_messages:
-            break
         to = p["to"]
         if to not in country_to_uid or to in used:
             continue
